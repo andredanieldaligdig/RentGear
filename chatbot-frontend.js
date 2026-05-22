@@ -86,9 +86,20 @@ async function postJson(path, payload) {
         throw new Error(`Could not reach ${requestUrl}. ${error.message || "Network request failed."}`);
     }
 
-    const result = await response.json().catch(() => ({}));
+    const responseText = await response.text();
+    let result = {};
+
+    try {
+        result = responseText ? JSON.parse(responseText) : {};
+    } catch {
+        result = {};
+    }
+
     if (!response.ok) {
-        throw new Error(result.message || result.error || "The request could not be completed.");
+        const fallbackMessage = responseText && !result.message && !result.error
+            ? `Request to ${requestUrl} failed with status ${response.status}.`
+            : "The request could not be completed.";
+        throw new Error(result.message || result.error || fallbackMessage);
     }
 
     return result;
@@ -244,12 +255,19 @@ async function applyChatbotAnswer(rawValue) {
         return { success: true };
 
     } catch (error) {
+        const message = String(error?.message || "");
+
+        if (/car not found/i.test(message)) {
+            return {
+                success: false,
+                message: "Car not found. Please enter a valid car name."
+            };
+        }
 
         return {
             success: false,
-            message: "Car not found. Please enter a valid car name."
+            message: `Car validation is unavailable right now: ${message || "Please try again."}`
         };
-
     }
 }
 

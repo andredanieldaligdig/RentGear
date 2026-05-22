@@ -29,7 +29,14 @@ function getRequiredEnv(name) {
 
 function getPool() {
     if (!pool) {
-        const databaseUrl = new URL(getRequiredEnv("MYSQL_URL"));
+        let databaseUrl;
+
+        try {
+            databaseUrl = new URL(getRequiredEnv("MYSQL_URL").trim());
+        } catch (error) {
+            throw new Error("MYSQL_URL is missing or invalid. Use a full connection string like mysql://user:password@host:3306/database.");
+        }
+
         pool = mysql.createPool({
             host: databaseUrl.hostname,
             port: databaseUrl.port ? Number(databaseUrl.port) : 3306,
@@ -470,7 +477,7 @@ app.post("/api/cars/validate", async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: "Server error validating car."
+            message: error.message || "Server error validating car."
         });
     }
 });
