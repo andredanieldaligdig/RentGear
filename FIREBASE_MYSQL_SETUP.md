@@ -25,25 +25,41 @@ In Firebase:
 
 ## 2. Create the MySQL table
 
-Run this SQL in your MySQL database:
+Run this SQL in your MySQL database when using Firebase Auth for users:
 
 ```sql
 create table if not exists reservations (
-    id bigint unsigned not null auto_increment primary key,
-    created_at timestamp not null default current_timestamp,
+    id int not null auto_increment primary key,
     firebase_uid varchar(255) null,
-    vehicle_name varchar(255) not null,
-    pickup_location varchar(255) not null,
-    customer_name varchar(255) not null,
-    email varchar(255) not null,
-    phone varchar(100) not null,
-    drivers_license varchar(255) not null,
+    car_id int not null,
     pickup_date date not null,
     return_date date not null,
-    notes text null,
-    status varchar(50) not null default 'pending'
+    total_price decimal(10,2) null,
+    status varchar(50) not null default 'pending',
+    created_at timestamp not null default current_timestamp,
+    key reservations_car_id_idx (car_id),
+    key reservations_firebase_uid_idx (firebase_uid),
+    constraint reservations_car_id_fk foreign key (car_id) references cars (id)
 );
 ```
+
+If your existing `reservations` table still uses `user_id`, migrate it before using `/api/reservations`:
+
+```sql
+alter table reservations
+    drop foreign key reservations_ibfk_1;
+
+alter table reservations
+    drop index user_id;
+
+alter table reservations
+    add column firebase_uid varchar(255) null after id;
+
+alter table reservations
+    drop column user_id;
+```
+
+Your frontend can continue using hardcoded vehicle cards in `app.js`, but `/api/reservations` now resolves the selected vehicle against the MySQL `cars` table and stores the matched `car_id`.
 
 ## 3. Vercel environment variables
 
@@ -102,7 +118,7 @@ When you later submit a reservation from the frontend:
 
 1. Get the Firebase user token
 2. Send it as `Authorization: Bearer <token>`
-3. Post the reservation payload to `/api/reservations`
+3. Post the reservation payload to `/api/reservations` with either `carId` or `vehicleName`
 
 Example:
 

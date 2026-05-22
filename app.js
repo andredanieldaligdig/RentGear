@@ -43,10 +43,12 @@ const state = {
     filteredTrucks: trucks,
     showcaseIndex: 0,
     showcaseTimer: null,
-    showcaseAnimating: false
+    showcaseAnimating: false,
+    authUser: null,
+    authFlow: null
 };
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     setDefaultDates();
     renderVehicles();
     renderShowcase(true);
@@ -56,9 +58,12 @@ document.addEventListener("DOMContentLoaded", () => {
     bindMenu();
     bindModals();
     bindAuthForms();
+    bindSettingsForms();
     bindShowcase();
+    bindAccountActions();
     updateFleetStatus();
     startShowcaseAutoplay();
+    await initializeAuthUi();
 });
 
 function getBackendBaseUrl() {
@@ -68,7 +73,7 @@ function getBackendBaseUrl() {
     }
 
     if (window.location.protocol === "file:") {
-        return "http://localhost:3000";
+        return "rentgear-production-7618.up.railway.app";
     }
 
     if (window.location.port === "3000") {
@@ -76,6 +81,22 @@ function getBackendBaseUrl() {
     }
 
     return `${window.location.protocol}//${window.location.hostname}:3000`;
+}
+
+function getStoredPhoneKey(uid) {
+    return `rentgearPhone:${uid}`;
+}
+
+function getStoredPhone(uid) {
+    return uid ? window.localStorage.getItem(getStoredPhoneKey(uid)) || "" : "";
+}
+
+function setStoredPhone(uid, phone) {
+    if (!uid) {
+        return;
+    }
+
+    window.localStorage.setItem(getStoredPhoneKey(uid), phone.trim());
 }
 
 function getVehicleImagePath(vehicleName) {
@@ -280,7 +301,7 @@ function bindShowcase() {
     document.getElementById("showcaseReserveButton")?.addEventListener("click", () => {
         const vehicle = cars[state.showcaseIndex];
         if (vehicle) {
-            handleRentClick(vehicle.name);
+            handleRentClick(vehicle);
         }
     });
 }
@@ -414,7 +435,10 @@ function renderVehicleGrid(containerId, vehicles) {
 
     container.innerHTML = vehicles.map(createVehicleCard).join("");
     container.querySelectorAll("[data-rent-vehicle]").forEach((button) => {
-        button.addEventListener("click", () => handleRentClick(button.dataset.rentVehicle));
+        button.addEventListener("click", () => handleRentClick({
+            id: Number(button.dataset.rentId),
+            name: button.dataset.rentVehicle
+        }));
     });
 }
 
@@ -441,7 +465,7 @@ function createVehicleCard(vehicle) {
                         <div class="price-period">per day</div>
                     </div>
                 </div>
-                <button class="btn-rent button-wipe" type="button" data-rent-vehicle="${escapeHtml(vehicle.name)}"><span>Reserve Now</span></button>
+                <button class="btn-rent button-wipe" type="button" data-rent-id="${vehicle.id}" data-rent-vehicle="${escapeHtml(vehicle.name)}"><span>Reserve Now</span></button>
             </div>
         </div>
     `;
@@ -521,28 +545,202 @@ function bindAuthForms() {
     document.getElementById("signupForm")?.addEventListener("submit", handleSignup);
 }
 
-async function postJson(path, payload, options = {}) {
-    let response;
+function bindSettingsForms() {
+    document.getElementById("profileSettingsForm")?.addEventListener("submit", handleProfileSave);
+    document.getElementById("passwordSettingsForm")?.addEventListener("submit", handlePasswordChange);
+    document.getElementById("refreshHistoryButton")?.addEventListener("click", () => refreshBookingHistory());
+}
+
+function bindAccountActions() {
+    document.getElementById("menuLogoutButton")?.addEventListener("click", handleLogout);
+}
+
+function getFriendlyFirebaseMessage(error, action) {
+    const code = String(error?.code || "");
+
+    if (code === "auth/invalid-credential") {
+        return action === "login"
+            ? "Invalid email or password. Use the exact credentials you signed up with in Firebase."
+            : "Those credentials could not be accepted by Firebase.";
+    }
+
+    if (code === "auth/user-not-found") {
+        return "That account was not found in Firebase.";
+    }
+
+    if (code === "auth/wrong-password") {
+        return "The password you entered is incorrect.";
+    }
+
+    if (code === "auth/email-already-in-use") {
+        return "That email address is already registered in Firebase.";
+    }
+
+    if (code === "auth/requires-recent-login") {
+        return "For security, please log out and log back in before changing this account detail.";
+    }
+
+    if (code === "auth/weak-password") {
+        return "Password should be at least 6 characters long.";
+    }
+
+    if (code === "auth/invalid-email") {
+        return "Please enter a valid email address.";
+    }
+
+    if (code === "auth/too-many-requests") {
+        return "Too many attempts were made. Please wait a bit and try again.";
+    }
+
+    return error?.message || "The request could not be completed.";
+}
+
+function getDisplayName(user) {
+    return user?.displayName || (user?.email ? user.email.split("@")[0] : "Account");
+}
+
+function updateAuthUi(user) {
+    const isLoggedIn = Boolean(user);
+    const headerLogin = document.getElementById("headerLoginButton");
+    const headerSignup = document.getElementById("headerSignupButton");
+    const headerAccount = document.getElementById("headerAccountButton");
+    const menuLogin = document.getElementById("menuLoginButton");
+    const menuSignup = document.getElementById("menuSignupButton");
+    const menuSettings = document.getElementById("menuSettingsButton");
+    const menuLogout = document.getElementById("menuLogoutButton");
+
+    if (headerLogin) {
+        headerLogin.hidden = isLoggedIn;
+    }
+
+    if (headerSignup) {
+        headerSignup.hidden = isLoggedIn;
+    }
+
+    if (headerAccount) {
+        headerAccount.hidden = !isLoggedIn;
+        headerAccount.querySelector("span").textContent = isLoggedIn ? getDisplayName(user) : "Account";
+    }
+
+    if (menuLogin) {
+        menuLogin.hidden = isLoggedIn;
+    }
+
+    if (menuSignup) {
+        menuSignup.hidden = isLoggedIn;
+    }
+
+    if (menuSettings) {
+        menuSettings.hidden = !isLoggedIn;
+    }
+
+    if (menuLogout) {
+        menuLogout.hidden = !isLoggedIn;
+    }
+
+    populateSettingsForm();
+}
+
+async function getVerifiedUserSession(user) {
+    if (!user || !window.RentGearFirebaseAuth) {
+        return null;
+    }
+
+    if (state.authFlow === "signup") {
+        return null;
+    }
+
+    if (state.authFlow === "login") {
+        return user.emailVerified ? user : null;
+    }
 
     try {
-        response = await fetch(`${getBackendBaseUrl()}${path}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                ...(options.headers || {})
-            },
-            body: payload === undefined ? undefined : JSON.stringify(payload)
-        });
+        await window.RentGearFirebaseAuth.reloadCurrentUser();
+        const refreshedUser = await window.RentGearFirebaseAuth.getCurrentUser();
+        const activeUser = refreshedUser || user;
+
+        if (activeUser.emailVerified) {
+            return activeUser;
+        }
+
+        await window.RentGearFirebaseAuth.signOut();
     } catch (error) {
-        throw new Error("Cannot reach the auth server. Start the Express backend on http://localhost:3000 and try again.");
+        console.warn("Unverified user session could not be finalized cleanly.", error);
     }
 
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(result.message || result.error || "The request could not be completed.");
+    return null;
+}
+
+async function initializeAuthUi() {
+    if (!window.RentGearFirebaseAuth) {
+        return;
     }
 
-    return result;
+    const initialUser = await window.RentGearFirebaseAuth.waitForAuthReady();
+    const verifiedInitialUser = await getVerifiedUserSession(initialUser);
+    state.authUser = verifiedInitialUser;
+    updateAuthUi(verifiedInitialUser);
+    await refreshBookingHistory();
+
+    await window.RentGearFirebaseAuth.onAuthChanged(async (user) => {
+        const verifiedUser = await getVerifiedUserSession(user);
+        state.authUser = verifiedUser;
+        updateAuthUi(verifiedUser);
+        await refreshBookingHistory();
+    });
+}
+
+function populateSettingsForm() {
+    const user = state.authUser;
+    const username = getDisplayName(user);
+    const email = user?.email || "";
+    const phone = getStoredPhone(user?.uid || "");
+
+    const summaryName = document.getElementById("profileDisplayName");
+    const summaryEmail = document.getElementById("profileEmail");
+    const summaryPhone = document.getElementById("profilePhone");
+    const summaryVerification = document.getElementById("profileVerificationStatus");
+
+    if (summaryName) {
+        summaryName.textContent = user ? username : "Not logged in";
+    }
+
+    if (summaryEmail) {
+        summaryEmail.textContent = email || "-";
+    }
+
+    if (summaryPhone) {
+        summaryPhone.textContent = phone || "Not set";
+    }
+
+    if (summaryVerification) {
+        summaryVerification.textContent = user ? (user.emailVerified ? "Verified" : "Not verified") : "Not logged in";
+    }
+
+    const usernameInput = document.getElementById("settingsUsername");
+    const phoneInput = document.getElementById("settingsPhone");
+    const emailInput = document.getElementById("settingsEmail");
+
+    if (usernameInput) {
+        usernameInput.value = user ? username : "";
+        usernameInput.disabled = !user;
+    }
+
+    if (phoneInput) {
+        phoneInput.value = phone;
+        phoneInput.disabled = !user;
+    }
+
+    if (emailInput) {
+        emailInput.value = email;
+        emailInput.disabled = !user;
+    }
+
+    document.querySelectorAll("#profileSettingsForm input, #profileSettingsForm button, #passwordSettingsForm input, #passwordSettingsForm button").forEach((element) => {
+        if (element instanceof HTMLInputElement || element instanceof HTMLButtonElement) {
+            element.disabled = !user;
+        }
+    });
 }
 
 async function handleLogin(event) {
@@ -557,27 +755,23 @@ async function handleLogin(event) {
             throw new Error("Firebase auth is still loading. Please try again.");
         }
 
+        state.authFlow = "login";
         const credential = await window.RentGearFirebaseAuth.signIn(email, password);
-        await window.RentGearFirebaseAuth.reloadCurrentUser();
+        await credential.user.reload();
 
         if (!credential.user.emailVerified) {
             await window.RentGearFirebaseAuth.signOut();
             throw new Error("Please verify your email address first before logging in.");
         }
 
-        const token = await credential.user.getIdToken(true);
-        const result = await postJson(
-            "/api/auth/login",
-            {},
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            }
-        );
+        window.localStorage.setItem("rentgearUser", JSON.stringify({
+            uid: credential.user.uid,
+            email: credential.user.email || "",
+            username: getDisplayName(credential.user),
+            emailVerified: Boolean(credential.user.emailVerified)
+        }));
 
-        window.localStorage.setItem("rentgearUser", JSON.stringify(result.user));
-        alert(`Welcome back, ${result.user.username}.`);
+        alert(`Welcome back, ${getDisplayName(credential.user)}.`);
         closeModal("loginModal");
         form.reset();
     } catch (error) {
@@ -585,11 +779,13 @@ async function handleLogin(event) {
             try {
                 await window.RentGearFirebaseAuth.signOut();
             } catch (signOutError) {
-                console.warn("Failed to sign out after login error.", signOutError);
+                console.warn("Failed to clear the Firebase session after login error.", signOutError);
             }
         }
 
-        alert(`Login could not be completed: ${error.message}`);
+        alert(`Login could not be completed: ${getFriendlyFirebaseMessage(error, "login")}`);
+    } finally {
+        state.authFlow = null;
     }
 }
 
@@ -601,63 +797,201 @@ async function handleSignup(event) {
     const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
+    const termsAccepted = Boolean(formData.get("termsAccepted"));
 
     if (password !== confirmPassword) {
         alert("Passwords do not match.");
         return;
     }
 
-    let createdFirebaseUser = null;
+    if (!termsAccepted) {
+        alert("Please agree to the Terms and Conditions before signing up.");
+        return;
+    }
 
     try {
         if (!window.RentGearFirebaseAuth) {
             throw new Error("Firebase auth is still loading. Please try again.");
         }
 
+        state.authFlow = "signup";
         const credential = await window.RentGearFirebaseAuth.signUp(email, password);
-        createdFirebaseUser = credential.user;
+        await window.RentGearFirebaseAuth.setProfile(credential.user, {
+            displayName: username
+        });
         await window.RentGearFirebaseAuth.sendVerification(credential.user);
-        const token = await credential.user.getIdToken(true);
-
-        const result = await postJson(
-            "/api/auth/signup",
-            {
-                username
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            }
-        );
-
         await window.RentGearFirebaseAuth.signOut();
-        alert(`Account created for ${result.user.username}. A verification email was sent to ${result.user.email}. Please verify it before logging in.`);
+
+        alert(`Account created for ${username}. A verification email was sent to ${email}. Please verify it before logging in.`);
         closeModal("signupModal");
         form.reset();
-        openModal("loginModal");
     } catch (error) {
-        if (createdFirebaseUser) {
+        if (window.RentGearFirebaseAuth) {
             try {
-                await window.RentGearFirebaseAuth.deleteUserAccount(createdFirebaseUser);
-            } catch (deleteError) {
-                try {
-                    await window.RentGearFirebaseAuth.signOut();
-                } catch (signOutError) {
-                    console.warn("Failed to sign out after signup error.", signOutError);
-                }
+                await window.RentGearFirebaseAuth.signOut();
+            } catch (signOutError) {
+                console.warn("Failed to clear the Firebase session after signup error.", signOutError);
             }
         }
 
-        alert(`Signup could not be completed: ${error.message}`);
+        alert(`Signup could not be completed: ${getFriendlyFirebaseMessage(error, "signup")}`);
+    } finally {
+        state.authFlow = null;
     }
 }
 
-function handleRentClick(vehicleName) {
-    if (window.RentGearChatbot?.open) {
-        window.RentGearChatbot.open(vehicleName);
+async function handleProfileSave(event) {
+    event.preventDefault();
+
+    if (!state.authUser || !window.RentGearFirebaseAuth) {
+        alert("Please log in first.");
         return;
     }
 
-    alert(`You selected ${vehicleName}. The booking chatbot is still loading.`);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const username = String(formData.get("username") || "").trim();
+    const phone = String(formData.get("phone") || "").trim();
+    const email = String(formData.get("email") || "").trim();
+    const currentPassword = String(formData.get("currentPassword") || "");
+    const currentEmail = state.authUser.email || "";
+
+    try {
+        if (username && username !== getDisplayName(state.authUser)) {
+            await window.RentGearFirebaseAuth.setProfile(state.authUser, {
+                displayName: username
+            });
+        }
+
+        setStoredPhone(state.authUser.uid, phone);
+
+        if (email && email !== currentEmail) {
+            if (!currentPassword) {
+                throw new Error("Enter your current password to change your email address.");
+            }
+
+            await window.RentGearFirebaseAuth.requestEmailChange(email, currentPassword);
+            alert(`A verification link was sent to ${email}. Click that link to complete the email change.`);
+        } else {
+            alert("Profile updated successfully.");
+        }
+
+        await window.RentGearFirebaseAuth.reloadCurrentUser();
+        updateAuthUi(state.authUser);
+        form.reset();
+        document.getElementById("settingsUsername").value = username;
+        document.getElementById("settingsPhone").value = phone;
+        document.getElementById("settingsEmail").value = currentEmail;
+    } catch (error) {
+        alert(`Profile update could not be completed: ${getFriendlyFirebaseMessage(error, "profile")}`);
+    }
+}
+
+async function handlePasswordChange(event) {
+    event.preventDefault();
+
+    if (!state.authUser || !window.RentGearFirebaseAuth) {
+        alert("Please log in first.");
+        return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const oldPassword = String(formData.get("oldPassword") || "");
+    const newPassword = String(formData.get("newPassword") || "");
+    const confirmNewPassword = String(formData.get("confirmNewPassword") || "");
+
+    if (newPassword !== confirmNewPassword) {
+        alert("New passwords do not match.");
+        return;
+    }
+
+    try {
+        await window.RentGearFirebaseAuth.changePassword(oldPassword, newPassword);
+        alert("Password updated successfully.");
+        form.reset();
+    } catch (error) {
+        alert(`Password change could not be completed: ${getFriendlyFirebaseMessage(error, "password")}`);
+    }
+}
+
+async function refreshBookingHistory() {
+    const historyContainer = document.getElementById("bookingHistory");
+    if (!historyContainer) {
+        return;
+    }
+
+    if (!state.authUser?.email) {
+        historyContainer.innerHTML = '<div class="history-empty">Log in to see your recent booking requests.</div>';
+        return;
+    }
+
+    historyContainer.innerHTML = '<div class="history-empty">Loading recent booking requests...</div>';
+
+    try {
+        const response = await fetch(`${getBackendBaseUrl()}/api/bookings/history?email=${encodeURIComponent(state.authUser.email)}`);
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(result.message || "Booking history could not be loaded.");
+        }
+
+        if (!result.bookings?.length) {
+            historyContainer.innerHTML = '<div class="history-empty">No booking requests found for this account yet.</div>';
+            return;
+        }
+
+        historyContainer.innerHTML = result.bookings.map((booking) => {
+            const detailRows = [
+                ["Request ID", booking.reference_id],
+                ["Pickup Date", booking.pickup_date],
+                ["Return Date", booking.return_date],
+                ["Requested By", booking.name],
+                ["Email Used", booking.email],
+                ["Contact Phone", booking.phone],
+                ["Request Notes", booking.message],
+                ["Submitted", booking.created_at]
+            ].filter(([, value]) => value && value !== "-");
+
+            return `
+                <article class="history-item">
+                    <div class="history-item-head">
+                        <strong>${escapeHtml(booking.requested_car || "Vehicle request")}</strong>
+                        <span>${escapeHtml(booking.status || "new")}</span>
+                    </div>
+                    <div class="history-item-details">
+                        ${detailRows.map(([label, value]) => `
+                            <p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>
+                        `).join("")}
+                    </div>
+                </article>
+            `;
+        }).join("");
+    } catch (error) {
+        historyContainer.innerHTML = `<div class="history-empty">${escapeHtml(error.message || "Booking history is unavailable right now.")}</div>`;
+    }
+}
+
+async function handleLogout() {
+    try {
+        await window.RentGearFirebaseAuth?.signOut();
+        window.localStorage.removeItem("rentgearUser");
+        closeModal("settingsModal");
+        alert("You have been logged out.");
+    } catch (error) {
+        alert(`Logout could not be completed: ${getFriendlyFirebaseMessage(error, "logout")}`);
+    }
+}
+
+function handleRentClick(vehicle) {
+    const selectedVehicle = typeof vehicle === "string"
+        ? { name: vehicle }
+        : vehicle;
+
+    if (window.RentGearChatbot?.open) {
+        window.RentGearChatbot.open(selectedVehicle);
+        return;
+    }
+
+    alert(`You selected ${selectedVehicle.name}. The booking chatbot is still loading.`);
 }

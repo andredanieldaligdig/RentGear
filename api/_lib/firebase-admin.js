@@ -1,3 +1,5 @@
+require("./env");
+
 const admin = require("firebase-admin");
 
 let app;

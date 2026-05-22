@@ -1,10 +1,12 @@
+require("./env");
+
 const mysql = require("mysql2/promise");
 
 let pool;
 
 function getPool() {
     if (!process.env.MYSQL_URL) {
-        throw new Error("Missing MYSQL_URL.");
+        throw new Error("Missing required environment variable: MYSQL_URL");
     }
 
     if (!pool) {

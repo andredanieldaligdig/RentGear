@@ -1,3 +1,5 @@
+require("./_lib/env");
+
 module.exports = function handler(req, res) {
     res.setHeader("Content-Type", "application/json");
 

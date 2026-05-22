@@ -8,7 +8,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
-<body data-backend-url="http://localhost:3000">
+<body data-backend-url="rentgear-production-7618.up.railway.app">
     <header>
         <div class="header-top">
             <div class="header-left">
@@ -25,8 +25,10 @@
                         <a href="about.html">About</a>
                         <a href="guides.html">Guides</a>
                         <a href="policies.html">Policies</a>
-                        <button type="button" data-modal-open="loginModal">Login</button>
-                        <button type="button" data-modal-open="signupModal">Sign Up</button>
+                        <button type="button" id="menuSettingsButton" data-modal-open="settingsModal" hidden>Settings</button>
+                        <button type="button" id="menuLogoutButton" hidden>Logout</button>
+                        <button type="button" id="menuLoginButton" data-modal-open="loginModal">Login</button>
+                        <button type="button" id="menuSignupButton" data-modal-open="signupModal">Sign Up</button>
                     </div>
                 </div>
                 <div class="logo-placeholder">
@@ -34,8 +36,9 @@
                 </div>
             </div>
             <div class="auth-buttons">
-                <button class="btn-login button-wipe" type="button" data-modal-open="loginModal"><span>Login</span></button>
-                <button class="btn-signup button-wipe" type="button" data-modal-open="signupModal"><span>Sign Up</span></button>
+                <button class="btn-login button-wipe" type="button" id="headerLoginButton" data-modal-open="loginModal"><span>Login</span></button>
+                <button class="btn-signup button-wipe" type="button" id="headerSignupButton" data-modal-open="signupModal"><span>Sign Up</span></button>
+                <button class="btn-account button-wipe" type="button" id="headerAccountButton" data-modal-open="settingsModal" hidden><span>Account</span></button>
             </div>
         </div>
     </header>
@@ -329,11 +332,11 @@
             <form id="loginForm">
                 <div class="form-group">
                     <label for="loginEmail">Email Address</label>
-                    <input id="loginEmail" name="email" type="email" placeholder="your@email.com" required>
+                    <input id="loginEmail" name="email" type="email" placeholder="your@email.com" autocomplete="username" required>
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">Password</label>
-                    <input id="loginPassword" name="password" type="password" placeholder="Enter your password" required>
+                    <input id="loginPassword" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required>
                 </div>
                 <div class="form-group">
                     <button class="button-wipe" type="submit"><span>Login</span></button>
@@ -354,26 +357,100 @@
             <form id="signupForm">
                 <div class="form-group">
                     <label for="signupName">Username</label>
-                    <input id="signupName" name="username" type="text" placeholder="Choose a username" required>
+                    <input id="signupName" name="username" type="text" placeholder="Choose a username" autocomplete="username" required>
                 </div>
                 <div class="form-group">
                     <label for="signupEmail">Email Address</label>
-                    <input id="signupEmail" name="email" type="email" placeholder="your@email.com" required>
+                    <input id="signupEmail" name="email" type="email" placeholder="your@email.com" autocomplete="email" required>
                 </div>
                 <div class="form-group">
                     <label for="signupPassword">Password</label>
-                    <input id="signupPassword" name="password" type="password" placeholder="Create a password" minlength="8" required>
+                    <input id="signupPassword" name="password" type="password" placeholder="Create a password" autocomplete="new-password" minlength="8" required>
                 </div>
                 <div class="form-group">
                     <label for="signupConfirmPassword">Confirm Password</label>
-                    <input id="signupConfirmPassword" name="confirmPassword" type="password" placeholder="Re-enter your password" minlength="8" required>
+                    <input id="signupConfirmPassword" name="confirmPassword" type="password" placeholder="Re-enter your password" autocomplete="new-password" minlength="8" required>
                 </div>
+                <label class="checkbox-row">
+                    <input id="signupTerms" name="termsAccepted" type="checkbox" required>
+                    <span>I agree to the <a href="policies.html#terms-conditions" target="_blank" rel="noopener noreferrer">Terms and Conditions</a>.</span>
+                </label>
                 <div class="form-group">
                     <button class="button-wipe" type="submit"><span>Create Account</span></button>
                 </div>
             </form>
             <div class="signup-link">
                 Already have an account? <button class="modal-link" type="button" data-modal-switch="loginModal">Login here</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="settingsModal">
+        <div class="modal-content modal-content-settings">
+            <div class="modal-header">
+                <span>Account Settings</span>
+                <button class="close-btn" type="button" data-modal-close="settingsModal">&times;</button>
+            </div>
+            <div class="settings-grid">
+                <section class="settings-card">
+                    <h3>Profile</h3>
+                    <div class="profile-summary">
+                        <div><strong>Username</strong><span id="profileDisplayName">Not logged in</span></div>
+                        <div><strong>Email</strong><span id="profileEmail">-</span></div>
+                        <div><strong>Phone</strong><span id="profilePhone">-</span></div>
+                        <div><strong>Status</strong><span id="profileVerificationStatus">Not verified</span></div>
+                    </div>
+                    <form id="profileSettingsForm">
+                        <div class="form-group">
+                            <label for="settingsUsername">Username</label>
+                            <input id="settingsUsername" name="username" type="text" placeholder="Your username" autocomplete="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="settingsPhone">Phone Number</label>
+                            <input id="settingsPhone" name="phone" type="tel" placeholder="+63 912 345 6789" autocomplete="tel">
+                        </div>
+                        <div class="form-group">
+                            <label for="settingsEmail">Email Address</label>
+                            <input id="settingsEmail" name="email" type="email" placeholder="your@email.com" autocomplete="email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="settingsCurrentPassword">Current Password</label>
+                            <input id="settingsCurrentPassword" name="currentPassword" type="password" placeholder="Required for email change" autocomplete="current-password">
+                        </div>
+                        <div class="form-group">
+                            <button class="button-wipe" type="submit"><span>Apply Profile Changes</span></button>
+                        </div>
+                    </form>
+                </section>
+                <section class="settings-card">
+                    <h3>Password</h3>
+                    <form id="passwordSettingsForm">
+                        <div class="form-group">
+                            <label for="settingsOldPassword">Old Password</label>
+                            <input id="settingsOldPassword" name="oldPassword" type="password" placeholder="Enter current password" autocomplete="current-password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="settingsNewPassword">New Password</label>
+                            <input id="settingsNewPassword" name="newPassword" type="password" placeholder="Enter new password" autocomplete="new-password" minlength="6" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="settingsConfirmNewPassword">Confirm New Password</label>
+                            <input id="settingsConfirmNewPassword" name="confirmNewPassword" type="password" placeholder="Confirm new password" autocomplete="new-password" minlength="6" required>
+                        </div>
+                        <div class="form-group">
+                            <button class="button-wipe" type="submit"><span>Change Password</span></button>
+                        </div>
+                    </form>
+                </section>
+                <section class="settings-card settings-card-wide">
+                    <div class="settings-card-header">
+                        <h3>Recent Booking Requests</h3>
+                        <button class="btn-reset-history" type="button" id="refreshHistoryButton">Refresh</button>
+                    </div>
+                    <div class="booking-history" id="bookingHistory">
+                        <div class="history-empty">Log in to see your recent booking requests.</div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
@@ -391,6 +468,11 @@
             <button class="chatbot-close" type="button" id="chatbotClose" aria-label="Close booking chatbot">&times;</button>
         </div>
         <div class="chatbot-messages" id="chatbotMessages"></div>
+        <div class="chatbot-tools">
+            <button type="button" id="chatbotBackButton">Back</button>
+            <button type="button" id="chatbotChangeCarButton">Pick Another Car</button>
+            <button type="button" id="chatbotRestartButton">Start Over</button>
+        </div>
         <form class="chatbot-input-row" id="chatbotForm">
             <input id="chatbotInput" type="text" placeholder="Type your answer here" autocomplete="off" required>
             <button type="submit">Send</button>

@@ -1,45 +1,33 @@
-import { getApp, getApps, initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-analytics.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyBSbQWBVj9vCD-LREzHTyDcau7INq-K-Uc",
-    authDomain: "carandtruckrentals-50d8f.firebaseapp.com",
-    projectId: "carandtruckrentals-50d8f",
-    storageBucket: "carandtruckrentals-50d8f.firebasestorage.app",
-    messagingSenderId: "257038010251",
-    appId: "1:257038010251:web:7f030ff3db9d463c10118e",
-    measurementId: "G-PQLJ2VGVBB"
-};
-
-const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
-let analytics = null;
-
-try {
-    analytics = getAnalytics(firebaseApp);
-} catch (error) {
-    console.warn("Firebase Analytics could not be started in this environment.", error);
-}
-
 const chatbotSteps = [
     {
         key: "requested_car",
+        type: "text",
         placeholder: "Toyota Vios",
         prompt: "What car do you want?"
     },
     {
         key: "pickup_date",
-        placeholder: "YYYY-MM-DD",
+        type: "date",
+        placeholder: "",
         prompt: "When will you pick it up?"
     },
     {
         key: "return_date",
-        placeholder: "YYYY-MM-DD",
+        type: "date",
+        placeholder: "",
         prompt: "When will you return it?"
     },
     {
-        key: "contact",
-        placeholder: "Juan Dela Cruz, juan@email.com",
-        prompt: "Please enter your name and email. Use this format: Name, email@example.com"
+        key: "name",
+        type: "text",
+        placeholder: "Juan Dela Cruz",
+        prompt: "What is your name?"
+    },
+    {
+        key: "email",
+        type: "email",
+        placeholder: "juan@email.com",
+        prompt: "What email should we use for this booking?"
     }
 ];
 
@@ -47,11 +35,26 @@ const chatbotState = {
     open: false,
     step: 0,
     data: {},
-    isSending: false
+    isSending: false,
+    lastSubmittedCar: ""
 };
 
-function formatDate(date) {
-    return date.toISOString().slice(0, 10);
+function normalizePrefilledCar(prefill) {
+    if (!prefill) {
+        return { requested_car: "", requested_car_id: null };
+    }
+
+    if (typeof prefill === "string") {
+        return {
+            requested_car: prefill,
+            requested_car_id: null
+        };
+    }
+
+    return {
+        requested_car: String(prefill.name || "").trim(),
+        requested_car_id: Number.isInteger(Number(prefill.id)) ? Number(prefill.id) : null
+    };
 }
 
 function getBackendBaseUrl() {
@@ -61,7 +64,7 @@ function getBackendBaseUrl() {
     }
 
     if (window.location.protocol === "file:") {
-        return "http://localhost:3000";
+        return "rentgear-production-7618.up.railway.app";
     }
 
     if (window.location.port === "3000") {
@@ -101,8 +104,25 @@ function appendChatbotMessage(role, content) {
     messages.scrollTop = messages.scrollHeight;
 }
 
+function getCurrentStep() {
+    return chatbotSteps[chatbotState.step] || null;
+}
+
+function syncInputForStep() {
+    const input = document.getElementById("chatbotInput");
+    const step = getCurrentStep();
+
+    if (!input || !step) {
+        return;
+    }
+
+    input.type = step.type;
+    input.placeholder = step.placeholder;
+    input.value = chatbotState.data[step.key] || "";
+}
+
 function askCurrentQuestion() {
-    const step = chatbotSteps[chatbotState.step];
+    const step = getCurrentStep();
     const input = document.getElementById("chatbotInput");
 
     if (!step || !input) {
@@ -110,7 +130,21 @@ function askCurrentQuestion() {
     }
 
     appendChatbotMessage("bot", step.prompt);
-    input.placeholder = step.placeholder;
+    syncInputForStep();
+    input.focus();
+}
+
+function updateChatbotToolState() {
+    const backButton = document.getElementById("chatbotBackButton");
+    const changeCarButton = document.getElementById("chatbotChangeCarButton");
+
+    if (backButton) {
+        backButton.disabled = chatbotState.step === 0 && !chatbotState.data.requested_car;
+    }
+
+    if (changeCarButton) {
+        changeCarButton.disabled = !chatbotState.data.requested_car && chatbotState.step === 0;
+    }
 }
 
 function resetChatbot(prefilledCar = "") {
@@ -126,12 +160,16 @@ function resetChatbot(prefilledCar = "") {
     messages.innerHTML = "";
     appendChatbotMessage("bot", "Hi, I can help you reserve a vehicle in a few quick steps.");
 
-    if (prefilledCar) {
-        chatbotState.data.requested_car = prefilledCar;
+    const normalizedPrefill = normalizePrefilledCar(prefilledCar);
+    if (normalizedPrefill.requested_car) {
+        chatbotState.data.requested_car = normalizedPrefill.requested_car;
+        chatbotState.data.requested_car_id = normalizedPrefill.requested_car_id;
+        chatbotState.lastSubmittedCar = normalizedPrefill.requested_car;
         chatbotState.step = 1;
-        appendChatbotMessage("bot", `Great choice. I will use ${prefilledCar} as your car choice.`);
+        appendChatbotMessage("bot", `Great choice. I will use ${normalizedPrefill.requested_car} as your car choice.`);
     }
 
+    updateChatbotToolState();
     askCurrentQuestion();
 }
 
@@ -150,6 +188,9 @@ function openChatbot(prefilledCar = "") {
 
     if (!document.getElementById("chatbotMessages")?.children.length || prefilledCar) {
         resetChatbot(prefilledCar);
+    } else {
+        syncInputForStep();
+        updateChatbotToolState();
     }
 
     document.getElementById("chatbotInput")?.focus();
@@ -170,49 +211,48 @@ function closeChatbot() {
 }
 
 function isValidDateInput(value) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return false;
-    }
-
-    const date = new Date(`${value}T00:00:00`);
-    return !Number.isNaN(date.getTime()) && formatDate(date) === value;
+    return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function parseContactDetails(value) {
-    const rawValue = value.trim();
-    const segments = rawValue.split(",").map((part) => part.trim()).filter(Boolean);
-
-    if (segments.length < 2) {
-        return null;
-    }
-
-    const email = segments.at(-1);
-    const name = segments.slice(0, -1).join(", ");
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!name || !emailPattern.test(email)) {
-        return null;
-    }
-
-    return { name, email };
+function isValidEmailInput(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function applyChatbotAnswer(rawValue) {
+async function applyChatbotAnswer(rawValue) {
     const value = rawValue.trim();
-    const step = chatbotSteps[chatbotState.step];
+    const step = getCurrentStep();
 
     if (!step || !value) {
         return { success: false, message: "Please enter a response before sending." };
     }
 
     if (step.key === "requested_car") {
+
+    try {
+
+        const res = await postJson("/api/cars/validate", {
+            requested_car: value
+        });
+
         chatbotState.data.requested_car = value;
+        chatbotState.data.requested_car_id = res.car.id;
+        chatbotState.lastSubmittedCar = value;
+
         return { success: true };
+
+    } catch (error) {
+
+        return {
+            success: false,
+            message: "Car not found. Please enter a valid car name."
+        };
+
     }
+}
 
     if (step.key === "pickup_date") {
         if (!isValidDateInput(value)) {
-            return { success: false, message: "Please enter the pickup date as YYYY-MM-DD." };
+            return { success: false, message: "Please choose a pickup date from the calendar." };
         }
 
         chatbotState.data.pickup_date = value;
@@ -221,7 +261,7 @@ function applyChatbotAnswer(rawValue) {
 
     if (step.key === "return_date") {
         if (!isValidDateInput(value)) {
-            return { success: false, message: "Please enter the return date as YYYY-MM-DD." };
+            return { success: false, message: "Please choose a return date from the calendar." };
         }
 
         if (chatbotState.data.pickup_date && value < chatbotState.data.pickup_date) {
@@ -232,14 +272,17 @@ function applyChatbotAnswer(rawValue) {
         return { success: true };
     }
 
-    if (step.key === "contact") {
-        const details = parseContactDetails(value);
-        if (!details) {
-            return { success: false, message: "Please use this format: Name, email@example.com" };
+    if (step.key === "name") {
+        chatbotState.data.name = value;
+        return { success: true };
+    }
+
+    if (step.key === "email") {
+        if (!isValidEmailInput(value)) {
+            return { success: false, message: "Please enter a valid email address." };
         }
 
-        chatbotState.data.name = details.name;
-        chatbotState.data.email = details.email;
+        chatbotState.data.email = value;
         return { success: true };
     }
 
@@ -261,6 +304,7 @@ async function submitChatbotLead() {
     try {
         const result = await postJson("/api/chatbot/lead", {
             requested_car: chatbotState.data.requested_car,
+            requested_car_id: chatbotState.data.requested_car_id,
             pickup_date: chatbotState.data.pickup_date,
             return_date: chatbotState.data.return_date,
             name: chatbotState.data.name,
@@ -277,23 +321,23 @@ async function submitChatbotLead() {
             appendChatbotMessage("bot", "I could not match that car exactly in the database, but your request was still emailed.");
         }
 
-        chatbotState.data = {};
+        appendChatbotMessage("bot", "You can pick another car, go back, or start over anytime.");
         chatbotState.step = 0;
-        appendChatbotMessage("bot", "If you want to make another request, tell me what car you want.");
+        chatbotState.data = {};
     } catch (error) {
         appendChatbotMessage("bot", `I could not send the request right now: ${error.message}`);
-        appendChatbotMessage("bot", "Please send your name and email again to retry.");
-        chatbotState.step = chatbotSteps.length - 1;
+        appendChatbotMessage("bot", "You can go back and correct any answer, or start over.");
+        chatbotState.step = Math.max(chatbotSteps.length - 1, 0);
     } finally {
         chatbotState.isSending = false;
         if (input) {
             input.disabled = false;
-            const currentStep = chatbotSteps[chatbotState.step];
-            input.placeholder = currentStep ? currentStep.placeholder : "Type your answer here";
-            input.focus();
         }
 
         submitButton?.removeAttribute("disabled");
+        syncInputForStep();
+        updateChatbotToolState();
+        input?.focus();
     }
 }
 
@@ -318,31 +362,82 @@ async function handleChatbotSubmit(event) {
 
     appendChatbotMessage("user", value);
 
-    const result = applyChatbotAnswer(value);
-    if (!result.success) {
-        appendChatbotMessage("bot", result.message);
-        input.value = "";
-        input.focus();
-        return;
-    }
+    const result = await applyChatbotAnswer(value);
 
+if (!result.success) {
+    appendChatbotMessage("bot", result.message);
+    input.focus();
+    return; // ❌ STOP HERE (correct)
+}
+
+// 🔥 IMPORTANT SAFETY: ensure car step cannot auto-advance without valid car
+const step = getCurrentStep();
+
+if (step?.key === "requested_car" && !chatbotState.data.requested_car_id) {
+    appendChatbotMessage("bot", "Please select a valid car from the list.");
+    return;
+}
     input.value = "";
     const isFinalStep = chatbotState.step === chatbotSteps.length - 1;
 
     if (!isFinalStep) {
-        chatbotState.step += 1;
-        askCurrentQuestion();
-        input.focus();
+    // extra safety for car step
+    const currentStep = getCurrentStep();
+
+    if (currentStep?.key === "requested_car" && !chatbotState.data.requested_car_id) {
+        appendChatbotMessage("bot", "Please enter a valid car before continuing.");
         return;
     }
 
+    chatbotState.step += 1;
+    updateChatbotToolState();
+    askCurrentQuestion();
+    return;
+}
+
+    updateChatbotToolState();
     await submitChatbotLead();
+}
+
+function goBackOneStep() {
+    if (chatbotState.isSending) {
+        return;
+    }
+
+    if (chatbotState.step > 0) {
+        const currentStep = getCurrentStep();
+        if (currentStep) {
+            delete chatbotState.data[currentStep.key];
+        }
+
+        chatbotState.step -= 1;
+        const previousStep = getCurrentStep();
+        if (previousStep) {
+            delete chatbotState.data[previousStep.key];
+            appendChatbotMessage("bot", `Let's update your ${previousStep.key.replace(/_/g, " ")}.`);
+            syncInputForStep();
+            updateChatbotToolState();
+            document.getElementById("chatbotInput")?.focus();
+        }
+        return;
+    }
+
+    if (chatbotState.data.requested_car) {
+        delete chatbotState.data.requested_car;
+        delete chatbotState.data.requested_car_id;
+        chatbotState.step = 0;
+        appendChatbotMessage("bot", "Okay, let's choose a different car.");
+        syncInputForStep();
+        updateChatbotToolState();
+        document.getElementById("chatbotInput")?.focus();
+    }
 }
 
 function bindChatbot() {
     const toggle = document.getElementById("chatbotToggle");
     const close = document.getElementById("chatbotClose");
     const form = document.getElementById("chatbotForm");
+    const input = document.getElementById("chatbotInput");
 
     toggle?.addEventListener("click", () => {
         if (chatbotState.open) {
@@ -355,12 +450,20 @@ function bindChatbot() {
 
     close?.addEventListener("click", () => closeChatbot());
     form?.addEventListener("submit", handleChatbotSubmit);
-}
+    document.getElementById("chatbotRestartButton")?.addEventListener("click", () => resetChatbot());
+    document.getElementById("chatbotChangeCarButton")?.addEventListener("click", () => {
+        resetChatbot();
+        appendChatbotMessage("bot", "No problem. Tell me the car you want now.");
+        document.getElementById("chatbotInput")?.focus();
+    });
+    document.getElementById("chatbotBackButton")?.addEventListener("click", goBackOneStep);
 
-window.RentGearFirebase = {
-    app: firebaseApp,
-    analytics
-};
+    input?.addEventListener("change", () => {
+        if (getCurrentStep()?.type === "date" && input.value) {
+            form?.requestSubmit();
+        }
+    });
+}
 
 window.RentGearChatbot = {
     open: openChatbot,
