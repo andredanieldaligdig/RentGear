@@ -2,7 +2,6 @@ const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const admin = require("firebase-admin");
 const mysql = require("mysql2/promise");
 const { Resend } = require("resend");
 
@@ -18,7 +17,6 @@ app.use(express.json());
 app.use(express.static(siteRoot));
 
 let pool;
-let firebaseAdminApp;
 
 function getRequiredEnv(name) {
     const value = process.env[name];
@@ -27,29 +25,6 @@ function getRequiredEnv(name) {
     }
 
     return value;
-}
-
-function getStatusForAuthError(error) {
-    const message = String(error?.message || "");
-
-    if (message.includes("Missing Firebase ID token")) {
-        return 401;
-    }
-
-    if (message.includes("verify your email")) {
-        return 403;
-    }
-
-    if (
-        message.includes("Firebase ID token") ||
-        message.includes("auth/") ||
-        message.includes("argument-error") ||
-        message.includes("decoding Firebase ID token")
-    ) {
-        return 401;
-    }
-
-    return 500;
 }
 
 function getPool() {
@@ -75,111 +50,23 @@ function getResendClient() {
     return new Resend(getRequiredEnv("RESEND_API_KEY"));
 }
 
-function getFirebaseAdminApp() {
-    if (firebaseAdminApp) {
-        return firebaseAdminApp;
-    }
-
-    const projectId = getRequiredEnv("FIREBASE_PROJECT_ID");
-    const clientEmail = getRequiredEnv("FIREBASE_ADMIN_CLIENT_EMAIL");
-    const privateKey = getRequiredEnv("FIREBASE_ADMIN_PRIVATE_KEY").replace(/\\n/g, "\n");
-
-    firebaseAdminApp = admin.apps.length
-        ? admin.app()
-        : admin.initializeApp({
-            credential: admin.credential.cert({
-                projectId,
-                clientEmail,
-                privateKey
-            })
-        });
-
-    return firebaseAdminApp;
+function getResendFromAddress() {
+    return process.env.RESEND_FROM_EMAIL || "RentGear <onboarding@resend.dev>";
 }
 
-async function verifyFirebaseTokenFromRequest(req) {
-    const authHeader = req.headers.authorization || "";
-    if (!authHeader.startsWith("Bearer ")) {
-        throw new Error("Missing Firebase ID token.");
-    }
-
-    const token = authHeader.slice("Bearer ".length).trim();
-    if (!token) {
-        throw new Error("Missing Firebase ID token.");
-    }
-
-    const firebaseApp = getFirebaseAdminApp();
-    return admin.auth(firebaseApp).verifyIdToken(token);
+function getResendInboxAddress() {
+    return process.env.RESEND_TO_EMAIL || process.env.GMAIL_TO_EMAIL || "andredanieldaligdig1@gmail.com";
 }
 
-async function ensureUsersAuthColumns(connection) {
-    const [firebaseUidColumns] = await connection.query("SHOW COLUMNS FROM users LIKE 'firebase_uid'");
-    if (!firebaseUidColumns.length) {
-        await connection.query("ALTER TABLE users ADD COLUMN firebase_uid VARCHAR(128) NULL AFTER id");
-    }
-
-    const [emailVerifiedColumns] = await connection.query("SHOW COLUMNS FROM users LIKE 'email_verified'");
-    if (!emailVerifiedColumns.length) {
-        await connection.query("ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0 AFTER password");
-    }
-}
-
-async function upsertFirebaseUser(connection, decodedToken, usernameOverride = "") {
-    await ensureUsersAuthColumns(connection);
-
-    const email = String(decodedToken.email || "").trim().toLowerCase();
-    if (!email) {
-        throw new Error("Firebase user does not have an email address.");
-    }
-
-    const firebaseUid = String(decodedToken.uid || "").trim();
-    const emailVerified = decodedToken.email_verified ? 1 : 0;
-    const preferredUsername = String(usernameOverride || decodedToken.name || email.split("@")[0] || "RentGear User").trim();
-
-    const [rows] = await connection.execute(
-        `
-            SELECT id, username, email
-            FROM users
-            WHERE firebase_uid = ?
-               OR email = ?
-            LIMIT 1
-        `,
-        [firebaseUid, email]
-    );
-
-    const existingUser = rows[0];
-
-    if (existingUser) {
-        await connection.execute(
-            `
-                UPDATE users
-                SET username = ?, email = ?, firebase_uid = ?, email_verified = ?
-                WHERE id = ?
-            `,
-            [preferredUsername || existingUser.username, email, firebaseUid, emailVerified, existingUser.id]
-        );
-
-        return {
-            id: existingUser.id,
-            username: preferredUsername || existingUser.username,
-            email,
-            emailVerified: Boolean(emailVerified)
-        };
-    }
-
-    const [result] = await connection.execute(
-        `
-            INSERT INTO users (username, email, password, firebase_uid, email_verified)
-            VALUES (?, ?, ?, ?, ?)
-        `,
-        [preferredUsername, email, "firebase-auth", firebaseUid, emailVerified]
-    );
-
+function getFirebaseWebConfig() {
     return {
-        id: result.insertId,
-        username: preferredUsername,
-        email,
-        emailVerified: Boolean(emailVerified)
+        apiKey: getRequiredEnv("FIREBASE_API_KEY"),
+        authDomain: getRequiredEnv("FIREBASE_AUTH_DOMAIN"),
+        projectId: getRequiredEnv("FIREBASE_PROJECT_ID"),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
+        appId: getRequiredEnv("FIREBASE_APP_ID"),
+        measurementId: process.env.FIREBASE_MEASUREMENT_ID || ""
     };
 }
 
@@ -197,28 +84,51 @@ function isValidDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 
-async function findMatchingCar(connection, requestedCar) {
-    const normalized = String(requestedCar || "").trim();
-    if (!normalized) {
-        return null;
+function getAvailabilityLine(availability) {
+    return availability.carFound
+        ? availability.isAvailable
+            ? `${availability.displayName} appears available for the selected dates.`
+            : `${availability.displayName} already has an overlapping confirmed reservation or is not marked available.`
+        : "The requested car could not be matched exactly in the cars table.";
+}
+
+async function findMatchingCar(connection, requestedCar, requestedCarId = null) {
+    const numericCarId = Number(requestedCarId);
+
+    // 1. Try ID first (most reliable)
+    if (Number.isInteger(numericCarId) && numericCarId > 0) {
+        const [rows] = await connection.execute(
+            `
+                SELECT id, brand, model, status
+                FROM cars
+                WHERE id = ?
+                LIMIT 1
+            `,
+            [numericCarId]
+        );
+
+        if (rows[0]) return rows[0];
     }
 
+    const normalized = String(requestedCar || "").trim();
+    if (!normalized) return null;
+
+    // 2. STRICT match: must be EXACT "brand model"
     const [rows] = await connection.execute(
         `
             SELECT id, brand, model, status
             FROM cars
-            WHERE LOWER(TRIM(CONCAT(brand, ' ', model))) = LOWER(TRIM(?))
-               OR LOWER(TRIM(model)) = LOWER(TRIM(?))
+            WHERE LOWER(CONCAT(brand, ' ', model)) = LOWER(?)
             LIMIT 1
         `,
-        [normalized, normalized]
+        [normalized]
     );
 
     return rows[0] || null;
 }
 
-async function buildAvailability(connection, requestedCar, pickupDate, returnDate) {
-    const car = await findMatchingCar(connection, requestedCar);
+async function buildAvailability(connection, requestedCar, pickupDate, returnDate, requestedCarId = null) {
+    const car = await findMatchingCar(connection, requestedCar, requestedCarId);
     if (!car) {
         return {
             carFound: false,
@@ -250,15 +160,11 @@ async function buildAvailability(connection, requestedCar, pickupDate, returnDat
     };
 }
 
-async function sendLeadEmail(lead, availability) {
+async function sendInternalLeadEmail(lead, availability) {
     const resend = getResendClient();
-    const from = process.env.RESEND_FROM_EMAIL || "RentGear <onboarding@resend.dev>";
-    const to = process.env.RESEND_TO_EMAIL || process.env.GMAIL_TO_EMAIL || "andredanieldaligdig1@gmail.com";
-    const availabilityLine = availability.carFound
-        ? availability.isAvailable
-            ? `${availability.displayName} appears available for the selected dates.`
-            : `${availability.displayName} already has an overlapping confirmed reservation or is not marked available.`
-        : "The requested car could not be matched exactly in the cars table.";
+    const from = getResendFromAddress();
+    const to = getResendInboxAddress();
+    const availabilityLine = getAvailabilityLine(availability);
 
     const subject = `New chatbot reservation request for ${lead.requested_car}`;
     const html = `
@@ -280,58 +186,99 @@ async function sendLeadEmail(lead, availability) {
         html
     });
 
-    return { subject, htmlTextSummary: availabilityLine };
+    return { subject, htmlTextSummary: availabilityLine, recipient: to };
+}
+
+async function sendCustomerConfirmationEmail(lead, availability, leadId) {
+    const resend = getResendClient();
+    const from = getResendFromAddress();
+    const to = String(lead.email).trim().toLowerCase();
+    const availabilityLine = getAvailabilityLine(availability);
+    const subject = `RentGear inquiry received${leadId ? ` (#${leadId})` : ""}`;
+    const html = `
+        <h2>We received your RentGear inquiry</h2>
+        <p>Hi ${escapeHtml(lead.name)},</p>
+        <p>Thank you for contacting RentGear. This message is your confirmation that we received your vehicle inquiry and sent it to our team for review.</p>
+        <p><strong>Inquiry reference:</strong> ${escapeHtml(leadId || "Pending")}</p>
+        <p><strong>Requested car:</strong> ${escapeHtml(lead.requested_car)}</p>
+        <p><strong>Pickup date:</strong> ${escapeHtml(lead.pickup_date)}</p>
+        <p><strong>Return date:</strong> ${escapeHtml(lead.return_date)}</p>
+        <p><strong>Status:</strong> Inquiry received</p>
+        <p><strong>Availability note:</strong> ${escapeHtml(availabilityLine)}</p>
+        <hr>
+        <p>Our team will follow up with you using this email address if any clarification is needed.</p>
+        <p>RentGear</p>
+    `;
+
+    await resend.emails.send({
+        from,
+        to,
+        subject,
+        html
+    });
+
+    return {
+        subject,
+        htmlTextSummary: `Customer confirmation sent for inquiry #${leadId || "pending"}.`,
+        recipient: to
+    };
 }
 
 app.get("/health", (req, res) => {
     res.json({ ok: true });
 });
 
-app.post("/api/auth/signup", async (req, res) => {
-    const { username } = req.body || {};
+app.get("/api/config", (req, res) => {
+    try {
+        res.json({ firebase: getFirebaseWebConfig() });
+    } catch (error) {
+        res.status(500).json({ error: error.message || "Firebase web configuration is unavailable." });
+    }
+});
 
-    if (!username) {
-        res.status(400).json({ message: "Username is required." });
+app.get("/api/bookings/history", async (req, res) => {
+    const email = String(req.query.email || "").trim().toLowerCase();
+
+    if (!email) {
+        res.status(400).json({ message: "Email is required." });
         return;
     }
 
     try {
         const connection = getPool();
-        const decodedToken = await verifyFirebaseTokenFromRequest(req);
-        const user = await upsertFirebaseUser(connection, decodedToken, String(username).trim());
-
-        res.status(201).json({
-            success: true,
-            verificationRequired: !user.emailVerified,
-            user
-        });
-    } catch (error) {
-        res.status(getStatusForAuthError(error)).json({ message: error.message || "Signup failed." });
-    }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-    try {
-        const connection = getPool();
-        const decodedToken = await verifyFirebaseTokenFromRequest(req);
-        const user = await upsertFirebaseUser(connection, decodedToken);
-
-        if (!decodedToken.email_verified) {
-            res.status(403).json({ message: "Please verify your email address before logging in." });
-            return;
-        }
+        const [rows] = await connection.execute(
+            `
+                SELECT id, name, email, phone, message, requested_car, pickup_date, return_date, status, created_at
+                FROM chatbot_leads
+                WHERE email = ?
+                ORDER BY created_at DESC
+                LIMIT 8
+            `,
+            [email]
+        );
 
         res.json({
             success: true,
-            user
+            bookings: rows.map((row) => ({
+                reference_id: row.id ? `RG-${row.id}` : "",
+                name: row.name,
+                email: row.email,
+                phone: row.phone,
+                message: row.message,
+                requested_car: row.requested_car,
+                pickup_date: row.pickup_date,
+                return_date: row.return_date,
+                status: row.status,
+                created_at: row.created_at instanceof Date ? row.created_at.toISOString().slice(0, 10) : String(row.created_at || "")
+            }))
         });
     } catch (error) {
-        res.status(getStatusForAuthError(error)).json({ message: error.message || "Login failed." });
+        res.status(500).json({ message: error.message || "Booking history could not be loaded." });
     }
 });
 
 async function handleChatbotLead(req, res) {
-    const { requested_car, pickup_date, return_date, name, email } = req.body || {};
+    const { requested_car, requested_car_id, pickup_date, return_date, name, email } = req.body || {};
 
     if (!requested_car || !pickup_date || !return_date || !name || !email) {
         res.status(400).json({ message: "Requested car, pickup date, return date, name, and email are required." });
@@ -352,7 +299,24 @@ async function handleChatbotLead(req, res) {
 
     try {
         const connection = getPool();
-        const availability = await buildAvailability(connection, requested_car, pickup_date, return_date);
+        const availability = await buildAvailability(
+    connection,
+    requested_car,
+    pickup_date,
+    return_date,
+    requested_car_id
+);
+
+// HARD STOP (must be before ANY DB write)
+if (!availability.carFound) {
+    console.log("BLOCKED INVALID CAR:", requested_car);
+
+    return res.status(400).json({
+        success: false,
+        error: "INVALID_CAR",
+        message: "Car not found. Please select a valid car."
+    });
+}
 
         const [leadResult] = await connection.execute(
             `
@@ -381,15 +345,25 @@ async function handleChatbotLead(req, res) {
 
         leadId = leadResult.insertId;
 
-        const emailResult = await sendLeadEmail(
-            {
-                requested_car: String(requested_car).trim(),
-                pickup_date,
-                return_date,
-                name: String(name).trim(),
-                email: String(email).trim().toLowerCase()
-            },
+        const leadPayload = {
+            requested_car: String(requested_car).trim(),
+            pickup_date,
+            return_date,
+            name: String(name).trim(),
+            email: String(email).trim().toLowerCase()
+        };
+
+        const internalEmailResult = await sendInternalLeadEmail(
+            leadPayload,
             availability
+        );
+
+        const customerEmailResult = await sendCustomerConfirmationEmail(
+            {
+                ...leadPayload
+            },
+            availability,
+            leadId
         );
 
         await connection.execute(
@@ -397,7 +371,15 @@ async function handleChatbotLead(req, res) {
                 INSERT INTO email_logs (user_email, subject, message, type)
                 VALUES (?, ?, ?, 'chatbot')
             `,
-            [String(email).trim().toLowerCase(), emailResult.subject, emailResult.htmlTextSummary]
+            [leadPayload.email, internalEmailResult.subject, `Internal inquiry email sent to ${internalEmailResult.recipient}. ${internalEmailResult.htmlTextSummary}`]
+        );
+
+        await connection.execute(
+            `
+                INSERT INTO email_logs (user_email, subject, message, type)
+                VALUES (?, ?, ?, 'chatbot')
+            `,
+            [leadPayload.email, customerEmailResult.subject, `Customer confirmation email sent to ${customerEmailResult.recipient}. ${customerEmailResult.htmlTextSummary}`]
         );
 
         await connection.execute(
@@ -434,7 +416,49 @@ async function handleChatbotLead(req, res) {
         res.status(500).json({ message: error.message || "Chatbot request failed." });
     }
 }
+app.post("/api/cars/validate", async (req, res) => {
+    try {
+        const { requested_car } = req.body || {};
 
+        if (!requested_car) {
+            return res.status(400).json({
+                success: false,
+                message: "Car name is required."
+            });
+        }
+
+        const connection = getPool();
+
+        const car = await findMatchingCar(
+            connection,
+            requested_car
+        );
+
+        if (!car) {
+            return res.status(404).json({
+                success: false,
+                message: "Car not found."
+            });
+        }
+
+        return res.json({
+            success: true,
+            car: {
+                id: car.id,
+                brand: car.brand,
+                model: car.model
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error validating car."
+        });
+    }
+});
 app.post("/api/chatbot/lead", handleChatbotLead);
 app.post("/chatbot-reservation", handleChatbotLead);
 
