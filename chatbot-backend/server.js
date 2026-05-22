@@ -9,7 +9,7 @@ dotenv.config({ path: path.resolve(__dirname, ".env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
-const port = Number(process.env.PORT || 8080);
+const port = Number(process.env.PORT || 3000);
 const siteRoot = path.resolve(__dirname, "..");
 
 app.use(cors());
@@ -29,14 +29,7 @@ function getRequiredEnv(name) {
 
 function getPool() {
     if (!pool) {
-        let databaseUrl;
-
-        try {
-            databaseUrl = new URL(getRequiredEnv("MYSQL_URL").trim());
-        } catch (error) {
-            throw new Error("MYSQL_URL is missing or invalid. Use a full connection string like mysql://user:password@host:3306/database.");
-        }
-
+        const databaseUrl = new URL(getRequiredEnv("MYSQL_URL"));
         pool = mysql.createPool({
             host: databaseUrl.hostname,
             port: databaseUrl.port ? Number(databaseUrl.port) : 3306,
@@ -102,9 +95,20 @@ function getAvailabilityLine(availability) {
 async function findMatchingCar(connection, requestedCar, requestedCarId = null) {
     const numericCarId = Number(requestedCarId);
 
+    // Search by car ID first
     if (Number.isInteger(numericCarId) && numericCarId > 0) {
         const [rows] = await connection.execute(
-            `SELECT id, name, status FROM cars WHERE id = ? LIMIT 1`,
+            `
+            SELECT
+                id,
+                brand,
+                model,
+                CONCAT(brand, ' ', model) AS name,
+                status
+            FROM cars
+            WHERE id = ?
+            LIMIT 1
+            `,
             [numericCarId]
         );
 
@@ -112,12 +116,27 @@ async function findMatchingCar(connection, requestedCar, requestedCarId = null) 
     }
 
     const normalized = String(requestedCar || "").trim();
-    if (!normalized) return null;
 
+    if (!normalized) {
+        return null;
+    }
+
+    // Search by brand + model
     const [rows] = await connection.execute(
-        `SELECT id, name, status FROM cars WHERE LOWER(name) = LOWER(?) LIMIT 1`,
-        [normalized]
-    );
+    `
+    SELECT
+        id,
+        brand,
+        model,
+        CONCAT(brand, ' ', model) AS name,
+        status
+    FROM cars
+    WHERE LOWER(CONCAT(brand, ' ', model)) = LOWER(?)
+       OR LOWER(model) = LOWER(?)
+    LIMIT 1
+    `,
+    [normalized, normalized]
+);
 
     return rows[0] || null;
 }
