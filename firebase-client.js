@@ -28,19 +28,17 @@ function getBackendBaseUrl() {
         return "https://rentgear-production-7618.up.railway.app";
     }
 
-    if (window.location.port === "3000") {
-        return window.location.origin;
-    }
-
-    return "https://rentgear-production-7618.up.railway.app";
+    return window.location.origin;
 }
 
 async function loadFirebaseConfig() {
-    const response = await fetch(`${getBackendBaseUrl()}/api/config`);
+    const configUrl = `${getBackendBaseUrl()}/api/config`;
+    const response = await fetch(configUrl);
     const result = await response.json().catch(() => ({}));
 
     if (!response.ok || !result.firebase) {
-        throw new Error(result.error || "Firebase web configuration could not be loaded.");
+        const details = result.error || `Request to ${configUrl} failed with status ${response.status}.`;
+        throw new Error(`Firebase web configuration could not be loaded. ${details}`);
     }
 
     return result.firebase;

@@ -99,7 +99,7 @@ async function findMatchingCar(connection, requestedCar, requestedCarId = null) 
     if (Number.isInteger(numericCarId) && numericCarId > 0) {
         const [rows] = await connection.execute(
             `
-                SELECT id, brand, model, status
+                SELECT id, name, status
                 FROM cars
                 WHERE id = ?
                 LIMIT 1
@@ -116,15 +116,21 @@ async function findMatchingCar(connection, requestedCar, requestedCarId = null) 
     // 2. STRICT match: must be EXACT "brand model"
     const [rows] = await connection.execute(
         `
-            SELECT id, brand, model, status
+            SELECT id, name, status
             FROM cars
-            WHERE LOWER(CONCAT(brand, ' ', model)) = LOWER(?)
+            WHERE LOWER(name) = LOWER(?)
             LIMIT 1
         `,
         [normalized]
     );
 
-    return rows[0] || null;
+    if (!rows[0]) return null;
+
+return {
+    id: rows[0].id,
+    name: rows[0].name,
+    status: rows[0].status
+};
 }
 
 async function buildAvailability(connection, requestedCar, pickupDate, returnDate, requestedCarId = null) {
@@ -246,6 +252,7 @@ app.get("/api/bookings/history", async (req, res) => {
 
     try {
         const connection = getPool();
+        await connection.query("SELECT 1");
         const [rows] = await connection.execute(
             `
                 SELECT id, name, email, phone, message, requested_car, pickup_date, return_date, status, created_at
@@ -290,7 +297,7 @@ async function handleChatbotLead(req, res) {
         return;
     }
 
-    if (String(return_date) < String(pickup_date)) {
+    if (new Date(return_date) < new Date(pickup_date)) {
         res.status(400).json({ message: "Return date must be the same as or later than the pickup date." });
         return;
     }
@@ -335,7 +342,7 @@ if (!availability.carFound) {
             [
                 String(name).trim(),
                 String(email).trim().toLowerCase(),
-                null,
+                " ",
                 "Reservation request submitted from website chatbot",
                 String(requested_car).trim(),
                 pickup_date,

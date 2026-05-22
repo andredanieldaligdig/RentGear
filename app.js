@@ -73,14 +73,10 @@ function getBackendBaseUrl() {
     }
 
     if (window.location.protocol === "file:") {
-        return "rentgear-production-7618.up.railway.app";
+        return "https://rentgear-production-7618.up.railway.app";
     }
 
-    if (window.location.port === "3000") {
-        return window.location.origin;
-    }
-
-    return "https://rentgear-production-7618.up.railway.app";
+    return window.location.origin;
 }
 
 function getStoredPhoneKey(uid) {
@@ -543,6 +539,24 @@ function closeModal(modalId) {
 function bindAuthForms() {
     document.getElementById("loginForm")?.addEventListener("submit", handleLogin);
     document.getElementById("signupForm")?.addEventListener("submit", handleSignup);
+    bindSignupTermsGuard();
+}
+
+function bindSignupTermsGuard() {
+    const termsCheckbox = document.getElementById("signupTerms");
+    const submitButton = document.getElementById("signupSubmitButton");
+
+    if (!(termsCheckbox instanceof HTMLInputElement) || !(submitButton instanceof HTMLButtonElement)) {
+        return;
+    }
+
+    const syncSignupButtonState = () => {
+        submitButton.disabled = !termsCheckbox.checked;
+        submitButton.title = termsCheckbox.checked ? "" : "Please agree to the Terms and Conditions first.";
+    };
+
+    termsCheckbox.addEventListener("change", syncSignupButtonState);
+    syncSignupButtonState();
 }
 
 function bindSettingsForms() {

@@ -338,6 +338,17 @@ header {
     transform: scaleX(1);
 }
 
+.button-wipe:disabled,
+.form-group button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.button-wipe:disabled::before,
+.form-group button:disabled::before {
+    transform: scaleX(0);
+}
+
 .button-wipe span,
 .form-group button span {
     position: relative;
