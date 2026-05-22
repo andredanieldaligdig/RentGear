@@ -9,7 +9,7 @@ dotenv.config({ path: path.resolve(__dirname, ".env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || 8080);
 const siteRoot = path.resolve(__dirname, "..");
 
 app.use(cors());
@@ -29,7 +29,14 @@ function getRequiredEnv(name) {
 
 function getPool() {
     if (!pool) {
-        const databaseUrl = new URL(getRequiredEnv("MYSQL_URL"));
+        let databaseUrl;
+
+        try {
+            databaseUrl = new URL(getRequiredEnv("MYSQL_URL").trim());
+        } catch (error) {
+            throw new Error("MYSQL_URL is missing or invalid. Use a full connection string like mysql://user:password@host:3306/database.");
+        }
+
         pool = mysql.createPool({
             host: databaseUrl.hostname,
             port: databaseUrl.port ? Number(databaseUrl.port) : 3306,
@@ -95,15 +102,9 @@ function getAvailabilityLine(availability) {
 async function findMatchingCar(connection, requestedCar, requestedCarId = null) {
     const numericCarId = Number(requestedCarId);
 
-    // 1. Try ID first (most reliable)
     if (Number.isInteger(numericCarId) && numericCarId > 0) {
         const [rows] = await connection.execute(
-            `
-                SELECT id, name, status
-                FROM cars
-                WHERE id = ?
-                LIMIT 1
-            `,
+            `SELECT id, name, status FROM cars WHERE id = ? LIMIT 1`,
             [numericCarId]
         );
 
@@ -113,24 +114,12 @@ async function findMatchingCar(connection, requestedCar, requestedCarId = null) 
     const normalized = String(requestedCar || "").trim();
     if (!normalized) return null;
 
-    // 2. STRICT match: must be EXACT "brand model"
     const [rows] = await connection.execute(
-        `
-            SELECT id, name, status
-            FROM cars
-            WHERE LOWER(name) = LOWER(?)
-            LIMIT 1
-        `,
+        `SELECT id, name, status FROM cars WHERE LOWER(name) = LOWER(?) LIMIT 1`,
         [normalized]
     );
 
-    if (!rows[0]) return null;
-
-return {
-    id: rows[0].id,
-    name: rows[0].name,
-    status: rows[0].status
-};
+    return rows[0] || null;
 }
 
 async function buildAvailability(connection, requestedCar, pickupDate, returnDate, requestedCarId = null) {
@@ -155,7 +144,7 @@ async function buildAvailability(connection, requestedCar, pickupDate, returnDat
         [car.id, returnDate, pickupDate]
     );
 
-    const displayName = `${car.brand} ${car.model}`.trim();
+    const displayName = car.name;
     const isAvailable = car.status === "available" && reservationRows.length === 0;
 
     return {

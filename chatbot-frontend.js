@@ -67,21 +67,24 @@ function getBackendBaseUrl() {
         return "https://rentgear-production-7618.up.railway.app";
     }
 
-    if (window.location.port === "3000") {
-        return window.location.origin;
-    }
-
-    return "https://rentgear-production-7618.up.railway.app";
+    return window.location.origin;
 }
 
 async function postJson(path, payload) {
-    const response = await fetch(`${getBackendBaseUrl()}${path}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    });
+    const requestUrl = `${getBackendBaseUrl()}${path}`;
+    let response;
+
+    try {
+        response = await fetch(requestUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        throw new Error(`Could not reach ${requestUrl}. ${error.message || "Network request failed."}`);
+    }
 
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
