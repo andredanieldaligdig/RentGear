@@ -64,14 +64,14 @@ function getBackendBaseUrl() {
     }
 
     if (window.location.protocol === "file:") {
-        return "rentgear-production-7618.up.railway.app";
+        return "https://rentgear-production-7618.up.railway.app";
     }
 
     if (window.location.port === "3000") {
         return window.location.origin;
     }
 
-    return "rentgear-production-7618.up.railway.app";
+    return "https://rentgear-production-7618.up.railway.app";
 }
 
 async function postJson(path, payload) {

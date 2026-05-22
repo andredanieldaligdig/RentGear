@@ -25,14 +25,14 @@ function getBackendBaseUrl() {
     }
 
     if (window.location.protocol === "file:") {
-        return "rentgear-production-7618.up.railway.app";
+        return "https://rentgear-production-7618.up.railway.app";
     }
 
     if (window.location.port === "3000") {
         return window.location.origin;
     }
 
-    return `${window.location.protocol}//${window.location.hostname}:3000`;
+    return "https://rentgear-production-7618.up.railway.app";
 }
 
 async function loadFirebaseConfig() {

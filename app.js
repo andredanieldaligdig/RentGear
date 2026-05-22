@@ -80,7 +80,7 @@ function getBackendBaseUrl() {
         return window.location.origin;
     }
 
-    return `${window.location.protocol}//${window.location.hostname}:3000`;
+    return "https://rentgear-production-7618.up.railway.app";
 }
 
 function getStoredPhoneKey(uid) {
