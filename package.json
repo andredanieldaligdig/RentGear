@@ -1,0 +1,13 @@
+{
+    "name": "rentgear-site",
+    "private": true,
+    "version": "1.0.0",
+    "description": "RentGear static site with Firebase Auth and MySQL-backed Vercel API routes.",
+    "scripts": {
+        "dev": "vercel dev"
+    },
+    "dependencies": {
+        "firebase-admin": "^13.5.0",
+        "mysql2": "^3.14.3"
+    }
+}

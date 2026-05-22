@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RentGear - Car and Truck Rental Services | Paranaque</title>
+    <meta name="description" content="RentGear offers car and truck rentals in Paranaque with practical pricing, clear policies, and support for personal and commercial transport needs.">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body data-backend-url="http://localhost:3000">
+    <header>
+        <div class="header-top">
+            <div class="header-left">
+                <div class="menu-shell">
+                    <button class="menu-toggle" type="button" id="menuToggle" aria-expanded="false" aria-controls="siteMenu" aria-label="Open site menu">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </button>
+                    <div class="menu-dropdown" id="siteMenu">
+                        <a href="index.html">Home</a>
+                        <a href="#carsSection">Cars</a>
+                        <a href="#trucksSection">Trucks</a>
+                        <a href="about.html">About</a>
+                        <a href="guides.html">Guides</a>
+                        <a href="policies.html">Policies</a>
+                        <button type="button" data-modal-open="loginModal">Login</button>
+                        <button type="button" data-modal-open="signupModal">Sign Up</button>
+                    </div>
+                </div>
+                <div class="logo-placeholder">
+                    <img src="src/logo.png" alt="RentGear Logo">
+                </div>
+            </div>
+            <div class="auth-buttons">
+                <button class="btn-login button-wipe" type="button" data-modal-open="loginModal"><span>Login</span></button>
+                <button class="btn-signup button-wipe" type="button" data-modal-open="signupModal"><span>Sign Up</span></button>
+            </div>
+        </div>
+    </header>
+
+    <div class="search-section">
+        <h2 class="search-title">Find Your Perfect Ride</h2>
+        <form id="vehicleSearchForm">
+            <div class="search-container">
+                <div class="search-group">
+                    <label for="vehicleType">Vehicle Type</label>
+                    <select id="vehicleType">
+                        <option value="">All Vehicles</option>
+                        <option value="cars">Cars Only</option>
+                        <option value="trucks">Trucks Only</option>
+                    </select>
+                </div>
+                <div class="search-group">
+                    <label for="pickupLocation">Pick-up Location</label>
+                    <select id="pickupLocation">
+                        <option value="">All Locations</option>
+                        <option value="Paranaque">Paranaque</option>
+                        <option value="Makati">Makati</option>
+                        <option value="Pasay">Pasay</option>
+                        <option value="Taguig">Taguig</option>
+                    </select>
+                </div>
+                <div class="search-group">
+                    <label for="pickupDate">Pick-up Date</label>
+                    <input id="pickupDate" type="date">
+                </div>
+                <div class="search-group">
+                    <label for="returnDate">Return Date</label>
+                    <input id="returnDate" type="date">
+                </div>
+                <div class="search-group">
+                    <label for="priceRange">Daily Rate Range</label>
+                    <select id="priceRange">
+                        <option value="">Any Price</option>
+                        <option value="1000-2000">PHP 1,000 - PHP 2,000</option>
+                        <option value="2000-5000">PHP 2,000 - PHP 5,000</option>
+                        <option value="5000+">PHP 5,000+</option>
+                    </select>
+                </div>
+            </div>
+            <div class="search-buttons">
+                <button class="btn-search" type="submit">Search Vehicles</button>
+                <button class="btn-reset" type="reset" id="resetFilters">Reset Filters</button>
+            </div>
+        </form>
+        <p class="fleet-status" id="fleetStatus">Showing all available units.</p>
+    </div>
+
+    <div class="tabs-container">
+        <button class="tab active" type="button" data-tab-filter="all">All Vehicles</button>
+        <button class="tab" type="button" data-tab-filter="cars">Cars</button>
+        <button class="tab" type="button" data-tab-filter="trucks">Trucks</button>
+    </div>
+
+    <div class="showcase-section">
+        <div class="showcase-header">
+            <div>
+                <h2 class="section-title">Featured Vehicle Showcase</h2>
+                <p class="showcase-subtitle">Only the car image glides across the stage. The details stay clean and still below it.</p>
+            </div>
+            <div class="showcase-controls">
+                <button class="showcase-nav" type="button" id="showcasePrev" aria-label="Previous featured vehicle">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button class="showcase-nav" type="button" id="showcaseNext" aria-label="Next featured vehicle">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+        <div class="showcase-card" id="showcaseCard" aria-live="polite">
+            <div class="showcase-media">
+                <div class="showcase-stage" id="showcaseStage">
+                    <img class="showcase-image current" id="showcaseCurrentImage" alt="">
+                    <img class="showcase-image next" id="showcaseNextImage" alt="">
+                </div>
+            </div>
+            <div class="showcase-content">
+                <div class="showcase-label" id="showcaseLabel"></div>
+                <div class="showcase-name" id="showcaseName"></div>
+                <div class="showcase-description" id="showcaseDescription"></div>
+                <div class="showcase-meta" id="showcaseMeta"></div>
+                <div class="showcase-price" id="showcasePrice"></div>
+                <div class="showcase-actions">
+                    <button class="btn-rent button-wipe showcase-action" type="button" id="showcaseReserveButton"><span>Reserve This Car</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="vehicle-section" id="carsSection">
+        <h2 class="section-title">Available Cars</h2>
+        <div class="vehicle-grid" id="carsGrid"></div>
+    </div>
+
+    <div class="vehicle-section" id="trucksSection">
+        <h2 class="section-title">Available Trucks</h2>
+        <div class="vehicle-grid" id="trucksGrid"></div>
+    </div>
+
+    <div class="features-section">
+        <div class="features-container">
+            <h2 class="features-title">Why Choose RentGear?</h2>
+            <div class="features-grid">
+                <div class="feature-item">
+                    <div class="feature-icon"><i class="fas fa-dollar-sign"></i></div>
+                    <h3 class="feature-title">Competitive Pricing</h3>
+                    <p class="feature-description">Best rates in the industry with transparent pricing. No hidden charges or surprise fees.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"><i class="fas fa-car-side"></i></div>
+                    <h3 class="feature-title">Well-Maintained Fleet</h3>
+                    <p class="feature-description">Modern vehicles regularly serviced and inspected for safety and comfort.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"><i class="fas fa-headset"></i></div>
+                    <h3 class="feature-title">24/7 Customer Support</h3>
+                    <p class="feature-description">Dedicated support team available round the clock for assistance and emergencies.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"><i class="fas fa-shield-alt"></i></div>
+                    <h3 class="feature-title">Insurance Included</h3>
+                    <p class="feature-description">Coverage guidance is provided for each booking, subject to actual policy terms and exclusions.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"><i class="fas fa-map-marker-alt"></i></div>
+                    <h3 class="feature-title">Multiple Locations</h3>
+                    <p class="feature-description">Convenient pick-up and drop-off coordination points across Metro Manila.</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon"><i class="fas fa-clock"></i></div>
+                    <h3 class="feature-title">Quick Booking</h3>
+                    <p class="feature-description">Fast and easy booking flow with room to connect Firebase Auth, MySQL, and Vercel when you deploy.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="how-it-works">
+        <h2 class="how-title">How It Works</h2>
+        <div class="steps-grid">
+            <div class="step">
+                <div class="step-number">1</div>
+                <h3 class="step-title">Browse &amp; Select</h3>
+                <p class="step-description">Browse our wide selection of cars and trucks. Filter by type, location, and price.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <h3 class="step-title">Check Availability</h3>
+                <p class="step-description">Choose your pick-up and return dates. See real-time vehicle availability.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <h3 class="step-title">Book &amp; Pay</h3>
+                <p class="step-description">Complete your booking and payment securely. Instant confirmation can be added once your backend is live.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">4</div>
+                <h3 class="step-title">Pick Up &amp; Drive</h3>
+                <p class="step-description">Pick up your vehicle at your preferred location. Inspect and drive off in minutes.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">5</div>
+                <h3 class="step-title">Enjoy Your Journey</h3>
+                <p class="step-description">Enjoy your rental with roadside assistance available if needed.</p>
+            </div>
+            <div class="step">
+                <div class="step-number">6</div>
+                <h3 class="step-title">Return &amp; Done</h3>
+                <p class="step-description">Return your vehicle at any approved location. Quick check-out process.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="faq-section">
+        <h2 class="faq-title">Frequently Asked Questions</h2>
+        <div class="faq-container">
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>What documents do I need to rent a vehicle?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">You need a valid driver's license, valid ID, and a payment method accepted by RentGear. For trucks, extra documentation or business-use details may be required.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>What is your minimum rental period?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Our minimum rental period is generally 24 hours, unless a different arrangement is confirmed in writing.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>Is insurance included in the rental price?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Coverage depends on the vehicle and booking terms. Please review the Insurance Policy and your final rental confirmation for exact details.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>What is your cancellation policy?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Cancellation terms should be reviewed in the Terms &amp; Conditions and your booking confirmation because refund rules can depend on timing and payment status.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>Do you offer delivery and pick-up services?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Delivery and coordinated return may be available depending on location, schedule, and additional fees.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>What if the vehicle breaks down?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Contact support immediately. Incident handling, roadside support, and customer obligations should follow the booking terms and applicable policies.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>Can I extend my rental period?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Yes, subject to vehicle availability and confirmation from RentGear before your current booking period ends.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button">
+                    <span>What payment methods do you accept?</span>
+                    <span class="faq-toggle">+</span>
+                </button>
+                <div class="faq-answer">Accepted payment methods can include cards, transfer, or other approved payment channels, depending on the final booking process you configure.</div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>About RentGear</h3>
+                <ul>
+                    <li><a href="about.html#about-us">About Us</a></li>
+                    <li><a href="about.html#our-fleet">Our Fleet</a></li>
+                    <li><a href="about.html#locations">Locations</a></li>
+                    <li><a href="about.html#careers">Careers</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h3>How It Works</h3>
+                <ul>
+                    <li><a href="guides.html#browse-vehicles">Browse Vehicles</a></li>
+                    <li><a href="guides.html#make-a-reservation">Make a Reservation</a></li>
+                    <li><a href="guides.html#pricing-guide">Pricing Guide</a></li>
+                    <li><a href="guides.html#faqs">FAQs</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h3>Policies</h3>
+                <ul>
+                    <li><a href="policies.html#terms-conditions">Terms &amp; Conditions</a></li>
+                    <li><a href="policies.html#privacy-policy">Privacy Policy</a></li>
+                    <li><a href="policies.html#insurance-policy">Insurance Policy</a></li>
+                    <li><a href="policies.html#rental-agreement">Rental Agreement</a></li>
+                    <li><a href="policies.html#damage-policy">Damage Policy</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h3>Contact Us</h3>
+                <ul>
+                    <li>+63 (2) 1234-5678</li>
+                    <li>support@rentgear.ph</li>
+                    <li>Paranaque, Metro Manila</li>
+                    <li>Hours: 7AM - 10PM Daily</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 RentGear Philippines. All rights reserved. Licensed and insured vehicle rental services.</p>
+        </div>
+    </footer>
+
+    <div class="modal" id="loginModal">
+        <div class="modal-content modal-content-compact">
+            <div class="modal-header">
+                <span>Login to RentGear</span>
+                <button class="close-btn" type="button" data-modal-close="loginModal">&times;</button>
+            </div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginEmail">Email Address</label>
+                    <input id="loginEmail" name="email" type="email" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input id="loginPassword" name="password" type="password" placeholder="Enter your password" required>
+                </div>
+                <div class="form-group">
+                    <button class="button-wipe" type="submit"><span>Login</span></button>
+                </div>
+            </form>
+            <div class="signup-link">
+                Don't have an account? <button class="modal-link" type="button" data-modal-switch="signupModal">Sign up here</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="signupModal">
+        <div class="modal-content modal-content-compact">
+            <div class="modal-header">
+                <span>Create Account</span>
+                <button class="close-btn" type="button" data-modal-close="signupModal">&times;</button>
+            </div>
+            <form id="signupForm">
+                <div class="form-group">
+                    <label for="signupName">Username</label>
+                    <input id="signupName" name="username" type="text" placeholder="Choose a username" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupEmail">Email Address</label>
+                    <input id="signupEmail" name="email" type="email" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupPassword">Password</label>
+                    <input id="signupPassword" name="password" type="password" placeholder="Create a password" minlength="8" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupConfirmPassword">Confirm Password</label>
+                    <input id="signupConfirmPassword" name="confirmPassword" type="password" placeholder="Re-enter your password" minlength="8" required>
+                </div>
+                <div class="form-group">
+                    <button class="button-wipe" type="submit"><span>Create Account</span></button>
+                </div>
+            </form>
+            <div class="signup-link">
+                Already have an account? <button class="modal-link" type="button" data-modal-switch="loginModal">Login here</button>
+            </div>
+        </div>
+    </div>
+
+    <button class="chatbot-toggle" type="button" id="chatbotToggle" aria-expanded="false" aria-controls="chatbotPanel" aria-label="Open booking chatbot">
+        <i class="fas fa-comment-dots"></i>
+    </button>
+
+    <section class="chatbot-panel" id="chatbotPanel" aria-hidden="true">
+        <div class="chatbot-header">
+            <div>
+                <strong>RentGear Assistant</strong>
+                <span>Quick booking chat</span>
+            </div>
+            <button class="chatbot-close" type="button" id="chatbotClose" aria-label="Close booking chatbot">&times;</button>
+        </div>
+        <div class="chatbot-messages" id="chatbotMessages"></div>
+        <form class="chatbot-input-row" id="chatbotForm">
+            <input id="chatbotInput" type="text" placeholder="Type your answer here" autocomplete="off" required>
+            <button type="submit">Send</button>
+        </form>
+    </section>
+
+    <script type="module" src="firebase-client.js"></script>
+    <script src="app.js" defer></script>
+    <script type="module" src="chatbot-frontend.js"></script>
+</body>
+</html>
