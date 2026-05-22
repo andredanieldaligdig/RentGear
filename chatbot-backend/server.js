@@ -148,6 +148,34 @@ async function findMatchingCar(connection, requestedCar, requestedCarId = null) 
     return rows[0] || null;
 }
 
+async function findCarCandidates(connection, requestedCar) {
+    const normalized = String(requestedCar || "").trim();
+    if (!normalized) {
+        return [];
+    }
+
+    const likeTerm = `%${normalized}%`;
+    const [rows] = await connection.execute(
+        `
+        SELECT
+            id,
+            brand,
+            model,
+            CONCAT(brand, ' ', model) AS name,
+            status
+        FROM cars
+        WHERE LOWER(CONCAT(brand, ' ', model)) LIKE LOWER(?)
+           OR LOWER(brand) LIKE LOWER(?)
+           OR LOWER(model) LIKE LOWER(?)
+        ORDER BY brand, model
+        LIMIT 5
+        `,
+        [likeTerm, likeTerm, likeTerm]
+    );
+
+    return rows;
+}
+
 async function buildAvailability(connection, requestedCar, pickupDate, returnDate, requestedCarId = null) {
     const car = await findMatchingCar(connection, requestedCar, requestedCarId);
     if (!car) {
@@ -247,6 +275,24 @@ async function sendCustomerConfirmationEmail(lead, availability, leadId) {
 
 app.get("/health", (req, res) => {
     res.json({ ok: true });
+});
+
+app.get("/debug-db", async (req, res) => {
+    try {
+        const connection = getPool();
+
+        const [db] = await connection.query("SELECT DATABASE() AS db");
+        const [cars] = await connection.query("SELECT COUNT(*) AS total FROM cars");
+
+        res.json({
+            database: db[0].db,
+            cars: cars[0].total
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
 });
 
 app.get("/api/config", (req, res) => {
@@ -457,6 +503,32 @@ app.post("/api/cars/validate", async (req, res) => {
         );
 
         if (!car) {
+            const candidates = await findCarCandidates(connection, requested_car);
+
+            if (candidates.length === 1) {
+                const singleMatch = candidates[0];
+                return res.json({
+                    success: true,
+                    car: {
+                        id: singleMatch.id,
+                        brand: singleMatch.brand,
+                        model: singleMatch.model,
+                        name: singleMatch.name
+                    }
+                });
+            }
+
+            if (candidates.length > 1) {
+                return res.status(409).json({
+                    success: false,
+                    message: `Please be more specific. Matching cars: ${candidates.map((candidate) => candidate.name).join(", ")}.`,
+                    candidates: candidates.map((candidate) => ({
+                        id: candidate.id,
+                        name: candidate.name
+                    }))
+                });
+            }
+
             return res.status(404).json({
                 success: false,
                 message: "Car not found."
@@ -468,7 +540,8 @@ app.post("/api/cars/validate", async (req, res) => {
             car: {
                 id: car.id,
                 brand: car.brand,
-                model: car.model
+                model: car.model,
+                name: car.name
             }
         });
 

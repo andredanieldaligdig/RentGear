@@ -241,35 +241,38 @@ async function applyChatbotAnswer(rawValue) {
     }
 
     if (step.key === "requested_car") {
+        try {
+            const res = await postJson("/api/cars/validate", {
+                requested_car: value
+            });
 
-    try {
+            const matchedName = String(res.car?.name || value).trim();
+            chatbotState.data.requested_car = matchedName;
+            chatbotState.data.requested_car_id = res.car.id;
+            chatbotState.lastSubmittedCar = matchedName;
 
-        const res = await postJson("/api/cars/validate", {
-            requested_car: value
-        });
+            return {
+                success: true,
+                message: matchedName !== value
+                    ? `I matched that to ${matchedName}.`
+                    : ""
+            };
+        } catch (error) {
+            const message = String(error?.message || "");
 
-        chatbotState.data.requested_car = value;
-        chatbotState.data.requested_car_id = res.car.id;
-        chatbotState.lastSubmittedCar = value;
+            if (/car not found/i.test(message) || /please be more specific/i.test(message)) {
+                return {
+                    success: false,
+                    message
+                };
+            }
 
-        return { success: true };
-
-    } catch (error) {
-        const message = String(error?.message || "");
-
-        if (/car not found/i.test(message)) {
             return {
                 success: false,
-                message: "Car not found. Please enter a valid car name."
+                message: `Car validation is unavailable right now: ${message || "Please try again."}`
             };
         }
-
-        return {
-            success: false,
-            message: `Car validation is unavailable right now: ${message || "Please try again."}`
-        };
     }
-}
 
     if (step.key === "pickup_date") {
         if (!isValidDateInput(value)) {
@@ -385,36 +388,32 @@ async function handleChatbotSubmit(event) {
 
     const result = await applyChatbotAnswer(value);
 
-if (!result.success) {
-    appendChatbotMessage("bot", result.message);
-    input.focus();
-    return; // ❌ STOP HERE (correct)
-}
+    if (!result.success) {
+        appendChatbotMessage("bot", result.message);
+        input.focus();
+        return;
+    }
 
-// 🔥 IMPORTANT SAFETY: ensure car step cannot auto-advance without valid car
-const step = getCurrentStep();
+    if (result.message) {
+        appendChatbotMessage("bot", result.message);
+    }
 
-if (step?.key === "requested_car" && !chatbotState.data.requested_car_id) {
-    appendChatbotMessage("bot", "Please select a valid car from the list.");
-    return;
-}
+    const step = getCurrentStep();
+    if (step?.key === "requested_car" && !chatbotState.data.requested_car_id) {
+        appendChatbotMessage("bot", "Please enter a valid car before continuing.");
+        input.focus();
+        return;
+    }
+
     input.value = "";
     const isFinalStep = chatbotState.step === chatbotSteps.length - 1;
 
     if (!isFinalStep) {
-    // extra safety for car step
-    const currentStep = getCurrentStep();
-
-    if (currentStep?.key === "requested_car" && !chatbotState.data.requested_car_id) {
-        appendChatbotMessage("bot", "Please enter a valid car before continuing.");
+        chatbotState.step += 1;
+        updateChatbotToolState();
+        askCurrentQuestion();
         return;
     }
-
-    chatbotState.step += 1;
-    updateChatbotToolState();
-    askCurrentQuestion();
-    return;
-}
 
     updateChatbotToolState();
     await submitChatbotLead();
