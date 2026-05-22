@@ -71,7 +71,7 @@ function getBackendBaseUrl() {
         return window.location.origin;
     }
 
-    return `${window.location.protocol}//${window.location.hostname}:3000`;
+    return "rentgear-production-7618.up.railway.app";
 }
 
 async function postJson(path, payload) {
